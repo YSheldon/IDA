@@ -1,0 +1,43 @@
+解决IDA PRO 8.3运行报错：
+IDAPython: error executing init.py:
+No module named 'imp'
+
+修改：python\3\ida_idaapi.py
+import imp => import importlib
+
+def IDAPython_LoadProcMod(path, g, print_error=True):
+    r"""
+    Load processor module.
+    """
+    pname = g['__name__'] if g and "__name__" in g else '__main__'
+    parent = sys.modules[pname]
+    path_dir, path_fname = os.path.split(path)
+    procmod_name = os.path.splitext(path_fname)[0]
+    procobj = None
+    spec = None
+    try:
+        spec = importlib.machinery.PathFinder.find_spec(procmod_name, [path_dir])
+        procmod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(procmod)
+        sys.modules[procmod_name] = procmod
+        
+        if parent:
+            setattr(parent, procmod_name, procmod)
+# export attrs from parent to processor module
+            parent_attrs = getattr(parent, '__all__',
+                                   (attr for attr in dir(parent) if not attr.startswith('_')))
+            for pa in parent_attrs:
+                setattr(procmod, pa, getattr(parent, pa))
+# instantiate processor object
+            if getattr(procmod, 'PROCESSOR_ENTRY', None):
+                procobj = procmod.PROCESSOR_ENTRY()
+        PY_COMPILE_ERR = None
+    except Exception as e:
+        PY_COMPILE_ERR = "%s\n%s" % (str(e), traceback.format_exc())
+        if print_error:
+            print(PY_COMPILE_ERR)
+    finally:
+        if print_error:
+            print(PY_COMPILE_ERR)
+
+    return (PY_COMPILE_ERR, procobj)
